@@ -1,10 +1,21 @@
 from flask import Flask, request, jsonify
-import requests
+import asyncio
+import aiohttp
 
 app = Flask(__name__)
 
 messages = []
 secondary_servers = ["http://host.docker.internal:5001", "http://host.docker.internal:5002"]
+
+async def replicate_message(session, server, message):
+    try:
+        async with session.post(f'{server}/replicate', json={"message": message}) as response:
+            response.raise_for_status()
+            print(f"Successfully replicated message to {server}")
+    except aiohttp.ClientError as e:
+        print(f"Error replicating message to {server}: {e}")
+        return False
+    return True
 
 @app.route('/messages', methods=['POST'])
 def add_message():
@@ -12,14 +23,20 @@ def add_message():
     message = data.get('message')
     messages.append(message)
 
-    for server in secondary_servers:
-        try:
-            response = requests.post(f'{server}/replicate', json={"message": message})
-            response.raise_for_status()  # This will raise an error for bad responses
-            print(f"Successfully replicated message to {server}")
-        except requests.exceptions.RequestException as e:
-            print(f"Error replicating message to {server}: {e}")
-            return jsonify({"error": f"Replication failed for {server}"}), 500
+    async def replicate_to_all_servers(message):
+        async with aiohttp.ClientSession() as session:
+            tasks = [replicate_message(session, server, message) for server in secondary_servers]
+            results = await asyncio.gather(*tasks)
+            if not all(results):
+                return False
+        return True
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    success = loop.run_until_complete(replicate_to_all_servers(message))
+
+    if not success:
+        return jsonify({"error": "Replication failed for one or more servers"}), 500
 
     return jsonify({"status": "Message replicated"}), 200
 
