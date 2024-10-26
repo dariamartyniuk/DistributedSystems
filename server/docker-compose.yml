@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  master:
+    build: .
+    environment:
+      - SECONDARY_SERVERS=http://secondary1:5001,http://secondary2:5002,http://secondary3:5003
+      - PORT=5000
+    ports:
+      - "5000:5000"
+
+  secondary1:
+    build: .
+    environment:
+      - PORT=5001
+      - SLEEP_TIME=2
+    ports:
+      - "5001:5001"
+
+  secondary2:
+    build: .
+    environment:
+      - PORT=5002
+      - SLEEP_TIME=30
+    ports:
+      - "5002:5002"
+
+  secondary3:
+    build: .
+    environment:
+      - PORT=5003
+      - SLEEP_TIME=40
+    ports:
+      - "5003:5003"

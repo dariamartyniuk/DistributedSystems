@@ -6,8 +6,8 @@ COPY requirements.txt requirements.txt
 RUN apt-get update && apt-get install -y curl
 RUN pip install -r requirements.txt
 
-EXPOSE 5000
-
 COPY . .
 
-CMD ["python", "master.py"]
+EXPOSE 5000
+
+CMD ["sh", "-c", "if [ \"$PORT\" = \"5000\" ]; then python master.py; else python secondary.py; fi"]

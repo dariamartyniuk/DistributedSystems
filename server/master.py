@@ -1,49 +1,48 @@
-from flask import Flask, request, jsonify
 import asyncio
+
 import aiohttp
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-messages = []
-secondary_servers = ["http://host.docker.internal:5001", "http://host.docker.internal:5002"]
+SECONDARIES = ["http://secondary1:5001", "http://secondary2:5002", "http://secondary3:5003"]
 
-async def replicate_message(session, server, message):
+async def replicate_message(session, secondary_url, message):
     try:
-        async with session.post(f'{server}/replicate', json={"message": message}) as response:
-            response.raise_for_status()
-            print(f"Successfully replicated message to {server}")
-    except aiohttp.ClientError as e:
-        print(f"Error replicating message to {server}: {e}")
+        async with session.post(f"{secondary_url}/replicate", json={"message": message}) as response:
+            return response.status == 200
+    except Exception as e:
+        print(f"Error replicating to {secondary_url}: {e}")
         return False
-    return True
 
-@app.route('/messages', methods=['POST'])
-def add_message():
+@app.route("/send", methods=["POST"])
+async def send_message():
     data = request.json
-    message = data.get('message')
-    messages.append(message)
+    message = data.get("message")
+    write_concern = data.get("w", 1)
 
-    async def replicate_to_all_servers(message):
-        async with aiohttp.ClientSession() as session:
-            tasks = [replicate_message(session, server, message) for server in secondary_servers]
-            results = await asyncio.gather(*tasks)
-            if not all(results):
-                return False
-        return True
+    acks_received = 0
+    tasks = []
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    success = loop.run_until_complete(replicate_to_all_servers(message))
+    async with aiohttp.ClientSession() as session:
+        acks_received += 1
 
-    if not success:
-        return jsonify({"error": "Replication failed for one or more servers"}), 500
+        tasks = [replicate_message(session, secondary_url, message) for secondary_url in SECONDARIES]
 
-    return jsonify({"status": "Message replicated"}), 200
+        for task in asyncio.as_completed(tasks):
+            success = await task
+            if write_concern == 1:
+                break
+            if success:
+                acks_received += 1
+            if acks_received >= write_concern:
+                break
+
+        if acks_received >= write_concern:
+            return jsonify({"acks_received": acks_received, "status": "Message replicated successfully"})
+        else:
+            return jsonify({"acks_received": acks_received, "status": "Not enough acks received"}), 500
 
 
-@app.route('/messages', methods=['GET'])
-def get_messages():
-    return jsonify({"messages": messages})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
