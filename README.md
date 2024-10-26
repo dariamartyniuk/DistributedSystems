@@ -1,108 +1,88 @@
-# Replicated Log Application
+```markdown
+# Message Replication Service
 
-This application demonstrates a simple replicated log architecture consisting of one **Master** and multiple **Secondary** servers. The Master accepts messages and ensures they are replicated across all Secondary servers in a blocking manner, waiting for an acknowledgment (ACK) from each Secondary before completing the request.
+This application provides a master-secondary architecture for message replication using a configurable write concern parameter. The service allows for asynchronous messaging and guarantees that messages are replicated to a specified number of secondary servers before confirming receipt to the client.
 
 ## Features
 
-- **Master** exposes:
-  - `POST /messages` - Appends a message to the log and replicates it to all secondaries.
-  - `GET /messages` - Returns all messages from the log.
-  
-- **Secondary** exposes:
-  - `POST /replicate` - Receives messages from the master for replication.
-  - `GET /messages` - Returns all replicated messages stored in-memory.
+- **Master-Secondary Replication**: Messages are sent from the master server to multiple secondary servers.
+- **Write Concern Parameter**: Configurable `w` parameter allows clients to specify how many acknowledgments to wait for from secondary servers before confirming receipt.
+- **Asynchronous Processing**: The application processes replication requests asynchronously for improved performance.
+- **Error Handling**: Provides feedback on the success or failure of message replication.
 
-## Requirements
+## Architecture
 
-- Docker
-- Python 3.7+
-  
-## Setup Instructions
+- **Master Server**: Receives messages and manages the replication process.
+- **Secondary Servers**: Replicate the received messages. The number of required acknowledgments can be configured through the `w` parameter.
 
-### Step 1: Clone the repository
+## Endpoints
 
+### 1. Send Message
+
+- **URL**: `/send`
+- **Method**: `POST`
+- **Request Body**:
+  ```json
+  {
+      "message": "Your message here",
+      "w": 1 // Optional, default is 1
+  }
+  ```
+- **Response**:
+  - **Success**: 
+    ```json
+    {
+        "acks_received": <number>,
+        "status": "Message replicated successfully"
+    }
+    ```
+  - **Failure**:
+    ```json
+    {
+        "acks_received": <number>,
+        "status": "Not enough acks received"
+    }
+    ```
+- **Description**: Sends a message to the master server, which then replicates it to the secondary servers. The server will respond as soon as it has received the required number of acknowledgments specified by the `w` parameter.
+
+## Setup and Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- Docker and Docker Compose
+
+### Installation Steps
+
+1. Clone the repository:
+   ```bash
+   git clone <repository_url>
+   cd <repository_directory>
+   ```
+
+2. Build and run the application using Docker Compose:
+   ```bash
+   docker-compose up --build
+   ```
+
+3. The master server will be running at `http://localhost:5000`.
+
+## Testing the Application
+
+You can test the application using `curl` or any API testing tool like Postman. Here are some example requests:
+
+### Send a Message with `w=1`:
 ```bash
-git clone https://github.com/dariamartyniuk/DistributedSystems.git
+curl -X POST http://localhost:5000/send -H "Content-Type: application/json" -d '{"message": "Hello, World with w=1", "w": 1}'
 ```
 
-### Step 2: Build Docker Images
-
-Build the Docker images for both the Master and Secondary servers.
-
+### Send a Message with `w=3`:
 ```bash
-# Build Master image
-docker build -t master:latest -f Dockerfile .
-
-# Build Secondary image
-docker build -t replica:latest -f Dockerfile .
+curl -X POST http://localhost:5000/send -H "Content-Type: application/json" -d '{"message": "Hello, World with w=3", "w": 3}'
 ```
 
-### Step 3: Create Docker Network
+## Notes
 
-Create a Docker network so that the Master and Secondary containers can communicate.
-
-```bash
-docker network create log_network
-```
-
-### Step 4: Run Master and Secondary Containers
-
-Run the containers for the Master and Secondary servers.
-
-```bash
-# Run the Master on port 5000
-docker run -d --name master1 --network log_network -p 5000:5000 master:latest
-
-# Run Secondary servers on port 5001 and 5002
-docker run -d --name secondary1 --network log_network -p 5001:5001 replica:latest
-docker run -d --name secondary2 --network log_network -p 5002:5002 replica:latest
-```
-
-### Step 5: Test the Application
-
-Once the containers are running, you can interact with the application using `curl`, Postman, or your browser.
-
-#### Add a Message (Replication Request)
-To add a message and have it replicated to all secondary servers:
-```bash
-curl -X POST http://localhost:5000/messages -H "Content-Type: application/json" -d '{"message":"Hello from master"}'
-```
-
-#### Retrieve Messages from Master
-To retrieve all messages stored on the master:
-```bash
-curl http://localhost:5000/messages
-```
-
-#### Retrieve Messages from Secondary
-To retrieve replicated messages from a secondary server (e.g., `secondary1`):
-```bash
-curl http://localhost:5001/messages
-```
-
-### Step 6: Check Logs
-
-You can check the logs of each container to monitor communication and ensure that replication is occurring:
-
-```bash
-# Master logs
-docker logs master1
-
-# Secondary logs (for secondary1 and secondary2)
-docker logs secondary1
-docker logs secondary2
-```
-
-### Step 7: Stop the Application
-
-To stop and remove the running containers:
-```bash
-docker stop master1 secondary1 secondary2
-docker rm master1 secondary1 secondary2
-```
-
-### Troubleshooting
-
-- Ensure that the Master and Secondary servers are running on the same Docker network (`log_network`).
-- Check Docker container logs if replication fails.
-- Ensure that the appropriate ports (5000, 5001, etc.) are mapped and accessible.
+- If `w=1`, the application will respond as soon as it receives acknowledgment from the master.
+- If `w>1`, the application will wait until the specified number of acknowledgments is received from the secondary servers.
+- The application is designed to handle various write concern levels, allowing flexibility in message replication.
